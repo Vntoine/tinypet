@@ -1,0 +1,11 @@
+indexes:
+  - kind: Petition
+    properties:
+    - name: tags
+    - name: dateCreation
+      direction: desc
+
+  - kind: Signature
+    properties:
+    - name: email
+    - name: pid

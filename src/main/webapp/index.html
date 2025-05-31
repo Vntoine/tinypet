@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+	<meta charset="UTF-8">
+	<title>TinyPet</title>
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<link rel="shortcut icon" href="aurevoir.ico" type="image/x-icon">
+	<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.8.0/css/bulma.min.css">
+	<script defer src="https://use.fontawesome.com/releases/v5.3.1/js/all.js"></script>    
+	<script src="https://unpkg.com/mithril/mithril.js"></script>
+	<script src="https://cdn.jsdelivr.net/npm/jwt-decode/build/jwt-decode.min.js"></script>
+	<script src="https://accounts.google.com/gsi/client" defer></script>
+</head>
+<body>
+	<script>
+
+		var authenticatedUser = {
+			id: '',
+			name: '',
+			email: '',
+			get isLogged() {
+				return this.id !== '';
+			}
+		}
+
+		function handleCredentialResponse(response) {
+			const responsePayload = jwt_decode(response.credential);
+
+			authenticatedUser.id = response.credential;
+			authenticatedUser.name = responsePayload.name;
+			authenticatedUser.email = responsePayload.email;
+
+			const url = "_ah/api/myApi/v1/Hello"+'?access_token=' + response.credential
+        	fetch(url)
+
+			m.route.set("/home")
+		}
+
+		var Signataire = {
+			list: [],
+			nextToken: "",
+			currentPid: "",
+			signatairesPetition: function (pid) {
+				Signataire.currentPid = pid;
+				Signataire.nextToken = "";
+				return m.request({
+					method: "GET",
+					url: `_ah/api/myApi/v1/signatairesPetition/${pid}`
+				}).then(function (result) {
+					console.log("signataires petition:", result)
+					Signataire.list = result.items;
+					if (!result.nextPageToken || result.items.length < 10) {
+						Signataire.nextToken = "";
+					} else {
+						Signataire.nextToken = result.nextPageToken;
+					}
+					m.redraw();
+				});
+			},
+			next: function () {
+				if (!Signataire.nextToken) return;
+
+				return m.request({
+					method: "GET",
+					url: `_ah/api/myApi/v1/signatairesPetition/${Signataire.currentPid}?next=${Signataire.nextToken}`
+				}).then(function (result) {
+					Signataire.list = Signataire.list.concat(result.items);
+					if (!result.nextPageToken || result.items.length < 10) {
+						Signataire.nextToken = "";
+					} else {
+						Signataire.nextToken = result.nextPageToken;
+					}
+					m.redraw();
+				});
+			}
+		}
+
+		var SignataireView = {
+			view: function () {
+                return m('div', [
+                    m('div', { class: 'subtitle' }, "Signataire de la pétition"),
+                    m('table', { class: 'table is-striped' }, [
+						m('tr', [
+							m('th', { width: "20px" }, "Email"),
+							m('th', { width: "20px" }, "Ce qu'il a signé"),
+						]),
+						Signataire.list.map(function (item) {
+							return m("tr", [
+								m('td', m('label', item.properties.email)),
+								m("button", {
+									class: 'button is-link',
+									onclick: function () {
+										Petition.mode = "signedBy"
+										Petition.email = item.properties.email
+										Petition.load();
+									},
+								}, "Voir")
+							])
+						})
+					]),
+					m('button', {
+						class: 'button is-link',
+						onclick: function () {
+							Signataire.next();
+						},
+						disabled: !Signataire.nextToken
+					}, "Suivant")
+                ])
+            }
+		}
+
+		var SignataireForm = {
+			email: '',
+			save: function () {
+				Petition.mode = "signedBy"
+				Petition.email = SignataireForm.email
+				Petition.load();
+				this.email = '';
+			}
+		}
+
+		var SignataireFormView = {
+			view: function () {
+				return m('div', [
+					m("h1", { class: 'is-size-3' }, "Rechercher par email"),
+					m("label", { class: 'label' }, "Les pétitions signées par un utilisateur"),
+					m("input", {
+						type: "text",
+						id: "email",
+						name: "email",
+						oninput: function (e) {
+							SignataireForm.email = e.target.value
+						},
+						value: SignataireForm.email,
+						required: true
+					}),
+					m("button", {
+						class: 'button is-link',
+						onclick: function () {
+							Petition.mode = "signedBy"
+							Petition.email = SignataireForm.email
+							Petition.load();
+						},
+					}, "Rechercher")
+				])
+			}
+		}
+
+		var Petition = {
+			list: [],
+			nextToken: "",
+			mode: "topPetitions",
+			tag: "",
+			email: "",
+			print: function(){
+				if(this.mode === "topPetitions"){
+					return "Top 100 des pétitions"
+				} else if(this.mode === "searchByTag"){
+					return `Pétition avec le tag \"${this.tag}\"`
+				} else if(this.mode === "signedBy"){
+					return `Pétitions signées par ${this.email}`
+				} else return ""
+			},
+			addPetition: function (titre, description, tags) {
+				return m.request({
+					method: "POST",
+					url: "_ah/api/myApi/v1/addPetition/",
+					body: {
+						titre: titre,
+						description: description,
+						tags: tags,
+					},
+					headers: {
+						Authorization: "Bearer " + authenticatedUser.id
+					},
+				}).then(function (result) {
+					console.log("save petition:", result)
+					Petition.mode = "top"
+					Petition.load()
+				})
+			},
+			load: function () {
+				Petition.nextToken = "";
+
+				let url = "";
+				if (Petition.mode === "topPetitions") {
+					url = "_ah/api/myApi/v1/topPetitions"
+				} else if (Petition.mode === "searchByTag") {
+					url = `_ah/api/myApi/v1/tagPetitions/${encodeURIComponent(Petition.tag)}`
+				} else if (Petition.mode === "signedBy") {
+					url = `_ah/api/myApi/v1/signedByPetitions/${encodeURIComponent(Petition.email)}`
+				}
+				return m.request({ method: "GET", url: url }).then(result => {
+					console.log("result petition for "+Petition.mode+":", result)
+					Petition.list = result.items;
+					if (!result.nextPageToken || result.items.length < 10) {
+						Petition.nextToken = "";
+					} else {
+						Petition.nextToken = result.nextPageToken;
+					}
+				});
+			},
+
+			next: function () {
+				if (!Petition.nextToken) return;
+
+				let url = "";
+				if (Petition.mode === "topPetitions") {
+					url = `_ah/api/myApi/v1/topPetitions?next=${Petition.nextToken}`;
+				} else if (Petition.mode === "searchByTag") {
+					url = `_ah/api/myApi/v1/tagPetitions/${encodeURIComponent(Petition.tag)}?next=${Petition.nextToken}`;
+				} else if (Petition.mode === "signedBy") {
+					url = `_ah/api/myApi/v1/signedByPetitions/${encodeURIComponent(Petition.email)}?next=${Petition.nextToken}`;
+				}
+
+				return m.request({ method: "GET", url: url }).then(result => {
+					Petition.list = Petition.list.concat(result.items);
+					if (!result.nextPageToken || result.items.length < 10) {
+						Petition.nextToken = "";
+					} else {
+						Petition.nextToken = result.nextPageToken;
+					}
+				});
+			}
+		}
+
+		var PetitionForm = {
+			titre: '',
+			description: '',
+			tags: '',
+			save: function () {
+				Petition.addPetition(this.titre, this.description, this.tags);
+				this.titre = '';
+				this.description = '';
+				this.tags = '';
+			}
+		}
+
+		var PetitionFormView = {
+			view: function () {
+				return m("div", [
+					m("h1", { class: 'is-size-3' }, "Créer une pétition"),
+					m("label", { class: 'label' }, "Titre"),
+					m("input", {
+						type: "text",
+						id: "title",
+						name: "title",
+						oninput: function (e) {
+							PetitionForm.titre = e.target.value
+						},
+						value: PetitionForm.titre,
+						required: true
+					}),
+					m("label", { class: 'label' }, "Description"),
+					m("textarea", {
+						id: "description",
+						name: "description",
+						rows: "4",
+						oninput: function (e) {
+							PetitionForm.description = e.target.value
+						},
+						value: PetitionForm.description,
+						required: true
+					}),
+					m("label", { class: 'label' }, "Tags"),
+					m("textarea", {
+						id: "tags",
+						name: "tags",
+						rows: "4",
+						oninput: function (e) {
+							PetitionForm.tags = e.target.value
+						},
+						value: PetitionForm.tags,
+						required: true
+					}),
+					m("button", {
+						class: 'button is-link',
+						onclick: function (){
+							PetitionForm.save()
+						},
+					}, "Envoyer")
+				]);
+			}
+		};
+
+		var PetitionView = {
+            oninit: function() {
+				Petition.mode = "topPetitions"
+				Petition.load()
+			},
+            view: function () {
+                return m('div', { class: 'container' } , [
+                    m('div', { class: 'title is-3' }, "Écran principal"),
+                    m('div', { class: 'subtitle is-4' }, Petition.print()),
+                    m('div', { style: { overflowX: 'auto', overflowY: 'auto', maxHeight: '600px' } }, [
+						m('table', { class: 'table is-striped is-bordered' }, [
+							m('tr', [
+								m('th', { width: "20px" }, "Nom"),
+								m('th', { width: "50px" }, "Titre"),
+								m('th', { width: "50px" }, "Description"),
+								m('th', { width: "50px" }, "Nombre de signatures"),
+								m('th', { width: "50px" }, "Date Création"),
+								m('th', { width: "50px" }, "tags"),
+								m('th', { width: "50px" }, "Vote"),
+								m('th', { width: "50px" }, "Signataires"),
+							]),
+							Petition.list.map(function (item) {
+								return m("tr", [
+									m('td', m('label', item.properties.auteur)),
+									m('td', m('label', item.properties.titre)),
+									m('td', m('label', item.properties.description)),
+									m('td', m('label', item.properties.nbSignatures)),
+									m('td', m('label', item.properties.dateCreation)),
+									m('td', m('label', JSON.stringify(item.properties.tags))),
+									m('td', m('button', {
+										onclick: function () {
+											m.request({
+												method: "POST",
+												url: "_ah/api/myApi/v1/addSignature/",
+												body: {
+													email: authenticatedUser.email,
+													pid: item.key.id
+												},
+												headers: {
+													Authorization: "Bearer " + authenticatedUser.id
+												}
+											}).then(function () {
+												Petition.mode = "topPetitions"
+												Petition.load()
+											});
+										}
+									}, "Voter")),
+									m('td', m('button', {
+										onclick: function (){
+											Signataire.signatairesPetition(item.key.id)
+										}
+									}, "Voir"))
+								])
+							})
+                    	])
+					]),
+					m('button', {
+						class: 'button is-link',
+						onclick: function () {
+							Petition.mode = "topPetitions"
+							Petition.load()
+						}
+					}, "Top 100"),
+					m('button', {
+						class: 'button is-link',
+						onclick: function () {
+							Petition.next();
+						},
+						disabled: !Petition.nextToken
+					}, "Suivant")
+                ])
+            }
+        }
+
+		var TagPetitionFormView = {
+			tag: '',
+			view: function () {
+				return m('div', [
+					m("h1", { class: 'is-size-3' }, "Rechercher par tag"),
+					m("label", { class: 'label' }, "(un seul tag)"),
+					m("input", {
+						type: "text",
+						id: "tag",
+						name: "tag",
+						oninput: function (e) {
+							TagPetitionFormView.tag = e.target.value
+						},
+						value: TagPetitionFormView.tag
+					}),
+					m("button", {
+						class: 'button is-link',
+						onclick: function (e) {
+							if (TagPetitionFormView.tag !== '') {
+								Petition.mode = "searchByTag"
+								Petition.tag = TagPetitionFormView.tag
+								Petition.load();
+							} else {
+								Petition.mode = "topPetitions"
+								Petition.load();
+							}
+						}
+					}, "Rechercher")
+				])
+			}
+		}
+
+		var Home = {
+			view: function() {
+				return m('div', {class:'container'}, [
+					m('div', { class: 'tile is-ancestor' }, [
+                        m("div", { class: 'tile' }, m('div', { class: 'tile is-child box' }, m(PetitionView))),
+                    ]),
+					m('div', { class: 'tile is-ancestor' }, [
+						m("div", { class: 'tile' }, m('div', { class: 'tile is-child box' }, m(TagPetitionFormView))),
+                    ]),
+					m('div', { class: 'tile is-ancestor' }, [
+						m("div", { class: 'tile' }, m('div', { class: 'tile is-child box' }, m(PetitionFormView))),
+						m("div", { class: 'tile' }, m('div', { class: 'tile is-child box' }, m(SignataireView))),
+						m("div", { class: 'tile' }, m('div', { class: 'tile is-child box' }, m(SignataireFormView))),
+                    ]),
+				])
+			}
+		}
+
+		var Login = {
+			view: function () {
+				return m('div', { class: 'container' }, [
+					m("h1", { class: 'title' }, 'Tiny PET'),
+					m("div", {
+						style: "display:flex;justify-content: center;align-items: center;height: 100vh;"
+					}, [
+						m("div", {
+							id: "g_id_signin",
+							class: "g_id_signin",
+							style: "display:flex;justify-content: center;align-items: center;",
+							"data-type": "standard"
+						}),
+					]),
+				]);
+			},
+			oncreate: function () {
+				google.accounts.id.initialize({
+					client_id: "1090580414141-a27topbs048b1m3sok3675h7cnn3o3i4.apps.googleusercontent.com",
+					callback: handleCredentialResponse
+				});
+				google.accounts.id.renderButton(
+					document.getElementById("g_id_signin"),
+					{
+						type: "standard",
+						theme: "outline",
+						size: "large"
+					}
+				);
+			}
+		}
+
+		m.route(document.body, "/login", {
+			"/login": Login,
+			"/home": { 
+				onmatch: function (){ 
+					if(!authenticatedUser.isLogged){
+						m.route.set("/login");
+					} else {
+						return Home;
+					}
+				}
+			},
+		});
+	
+	</script>
+
+</body>
+</html>
