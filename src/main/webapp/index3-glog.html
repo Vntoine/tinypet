@@ -1,18 +1,23 @@
 <!DOCTYPE html>
 <html>
 <head>
-	<meta charset="UTF-8">
-	<title>DiceGame</title>
-	<meta charset="utf-8">
-	<meta name="viewport" content="width=device-width, initial-scale=1">
-	<link rel="shortcut icon" href="aurevoir.ico" type="image/x-icon">
-	<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.8.0/css/bulma.min.css">
-	<script defer src="https://use.fontawesome.com/releases/v5.3.1/js/all.js"></script>
-	<script src="https://unpkg.com/mithril/mithril.js"></script>
+<meta charset="UTF-8">
+<title>DiceGame</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.8.0/css/bulma.min.css">
+<script defer src="https://use.fontawesome.com/releases/v5.3.1/js/all.js"></script>
+
+
+<script src="https://unpkg.com/mithril/mithril.js"></script>
+
 </head>
 <body>
 
 	<script src="https://cdn.jsdelivr.net/npm/jwt-decode/build/jwt-decode.min.js"></script>
+
     <script src="https://accounts.google.com/gsi/client" async defer></script>
     <div id="g_id_onload"
          data-client_id="1090580414141-a27topbs048b1m3sok3675h7cnn3o3i4.apps.googleusercontent.com"
@@ -29,9 +34,6 @@
 	var playerName = "";
 
 	function handleCredentialResponse(response) {
-        console.log("callback called:"+response.credential)
-        // decodeJwtResponse() is a custom function defined by you
-        // to decode the credential response.
         const responsePayload = jwt_decode(response.credential);
   
         console.log("ID: " + responsePayload.sub);
@@ -43,35 +45,34 @@
 
 		playerName = responsePayload.name;
 
-        const url = "_ah/api/myApi/v1/Hello"+'?access_token=' + response.credential
-        fetch(url).then(response => response.text()).then(data => document.getElementById('toto').innerHTML = data)
-
+		const url = "_ah/api/myApi/v1/Hello"+'?access_token=' + response.credential
+        fetch(url)
     }
 
 	function page(response){
 		handleCredentialResponse(response);
 
 		var DiceGame={
-		turn : 0,
-		d1 : 1,
-		d2 : 1,
-		name : playerName,
-		score : 0,
+			turn : 0,
+			d1 : 1,
+			d2 : 1,
+			name : playerName,
+			score : 0,
 
-		play: function() {
-			if (this.turn < 10) {
-				this.d1 = Math.floor((Math.random() * 5) + 1);
-				this.d2 = Math.floor((Math.random() * 5) + 1);
-				if (this.d1 + this.d2 == 7) {
-					this.score += 10;
+			play: function() {
+				if (this.turn < 10) {
+					this.d1 = Math.floor((Math.random() * 5) + 1);
+					this.d2 = Math.floor((Math.random() * 5) + 1);
+					if (this.d1 + this.d2 == 7) {
+						this.score += 10;
+					}
+					this.turn++;
+				} else {
+					Score.save(this.score,this.name);
+					this.turn=0;
+					this.score=0;
 				}
-				this.turn++;
-			} else {
-				Score.save(this.score,this.name);
-				this.turn=0;
-				this.score=0;
 			}
-		}
 		} // DiceGame
 
 		var DiceView={
@@ -104,11 +105,11 @@
 				loadList: function() {
 					return m.request({
 						method: "GET",
-						url: "_ah/api/myApi/v1/topscores/"
+						url: "_ah/api/myApi/v1/topscores"
 					})
 					.then(function(result) {
 						Score.list = result.items
-						console.log("got:",result.items)
+						console.log("score - got:",result.items)
 						// m.redraw(true) 
 					})
 				},
@@ -116,7 +117,7 @@
 					console.log("saving...",Score.current)
 					return m.request({
 						method: "GET",
-						url: "_ah/api/myApi/v1/addScore/"+score+"/"+name
+						url: "_ah/api/myApi/v1/addScoreSec/"+score+"/"+name
 					})
 					.then(function(result) {
 						console.log("got:",result)
@@ -154,32 +155,32 @@
 						url: "_ah/api/myApi/v1/myscores/"+name
 					})
 					.then(function(result) {
+						console.log("myscore - got:",result.items)
 						MyScore.list = result.items
-						console.log("got:",result.items)
 						// m.redraw(true) 
 					})
 				}
 			}
 
 		var MyScoreView = {
-		oninit: MyScore.loadList(DiceGame.name),
-		view: function() {
-			return m('div', [
-			m('div',{class:'subtitle'},"My Top 10 Scores"),
-			m('table', {class:'table is-striped'},[
-				m('tr', [
-				m('th', {width:"20px"}, "Name"),
-				m('th', {width:"50px"}, "Score"),
-				]),
-				MyScore.list.map(function(item) {
-				return m("tr", [
-					m('td', m('label', item.properties.name)),
-					m('td', m('label', item.properties.score)),
+			oninit: MyScore.loadList(DiceGame.name),
+			view: function() {
+				return m('div', [
+				m('div',{class:'subtitle'},"My Top 10 Scores"),
+				m('table', {class:'table is-striped'},[
+					m('tr', [
+					m('th', {width:"20px"}, "Name"),
+					m('th', {width:"50px"}, "Score"),
+					]),
+					MyScore.list.map(function(item) {
+					return m("tr", [
+						m('td', m('label', item.properties.name)),
+						m('td', m('label', item.properties.score)),
+					])
+					})
 				])
-				})
-			])
-			])
-		}
+				])
+			}
 		}
 
 		var Hello = {

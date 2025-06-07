@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+	<meta charset="UTF-8">
+	<title>TinyPet</title>
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<link rel="shortcut icon" href="aurevoir.ico" type="image/x-icon">
+	<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.8.0/css/bulma.min.css">
+	<script defer src="https://use.fontawesome.com/releases/v5.3.1/js/all.js"></script>    
+	<script src="https://unpkg.com/mithril/mithril.js"></script>
+	<script src="https://cdn.jsdelivr.net/npm/jwt-decode/build/jwt-decode.min.js"></script>
+	<script src="https://accounts.google.com/gsi/client" async defer></script>
+</head>
+<body>
+	<script>
+
+		var authenticatedUser = {
+			id: '',
+			name: '',
+			email: '',
+			get isLogged() {
+				return this.id !== '';
+			}
+		}
+
+		function handleCredentialResponse(response) {
+			const responsePayload = jwt_decode(response.credential);
+	
+			console.log("ID: " + responsePayload.sub);
+			console.log('Full Name: ' + responsePayload.name);
+			console.log('Given Name: ' + responsePayload.given_name);
+			console.log('Family Name: ' + responsePayload.family_name);
+			console.log("Image URL: " + responsePayload.picture);
+			console.log("Email: " + responsePayload.email);
+
+			authenticatedUser.id = response.credential;
+			authenticatedUser.name = responsePayload.name;
+			authenticatedUser.email = responsePayload.email;
+
+			const url = "_ah/api/myApi/v1/Hello"+'?access_token=' + response.credential
+        	fetch(url)
+
+			m.route.set("/home")
+		}
+
+		var Petition = {
+			list: [],
+			loadList: function () {
+				return m.request({
+					method: "GET",
+					url: "_ah/api/myApi/v1/topPetition/"
+				}).then(function (result) {
+					Petition.list = result.items;
+					console.log("got Petition:", Petition.list);
+					m.redraw(true);
+				})
+			},
+			save: function (titre, description, tags) {
+				return m.request({
+					method: "POST",
+					url: "_ah/api/myApi/v1/addPetition/",
+					body: {
+						titre: titre,
+						description: description,
+						tags: tags,
+					},
+					headers: {
+						Authorization: "Bearer " + authenticatedUser.id
+					}
+				}).then(function (result) {
+					console.log("got save Petition:", result)
+					Petition.loadList()
+				})
+			},
+		}
+
+		var PetitionGame = {
+			titre: '',
+			description: '',
+			tags: '',
+			play: function () {
+				Petition.save(this.titre, this.description, this.tags);
+				this.titre = '';
+				this.description = '';
+				this.tags = '';
+			}
+		}
+
+		var PetitionGameView = {
+			view: function () {
+				return m("div", [
+					m("h1", "Créer une pétition"),
+					m("label", { class: 'level-item' }, "Title"),
+					m("input", {
+						type: "text",
+						id: "title",
+						name: "title",
+						oninput: function (e) {
+							PetitionGame.titre = e.target.value
+						},
+						value: PetitionGame.titre,
+						required: true
+					}),
+					m("label", { class: 'level-item' }, "Description"),
+					m("textarea", {
+						id: "description",
+						name: "description",
+						rows: "4",
+						oninput: function (e) {
+							PetitionGame.description = e.target.value
+						},
+						value: PetitionGame.description,
+						required: true
+					}),
+					m("label", { class: 'level-item' }, "Tags"),
+					m("textarea", {
+						id: "tags",
+						name: "tags",
+						rows: "4",
+						oninput: function (e) {
+							PetitionGame.tags = e.target.value
+						},
+						value: PetitionGame.tags,
+						required: true
+					}),
+					m("button", {
+						class: 'button is-link',
+						onclick: function (e) {
+							PetitionGame.play();
+							Petition.loadList();
+						}
+					}, "Envoyer")
+				]);
+			}
+		};
+
+		var PetitionView = {
+            oninit: Petition.loadList,
+            view: function () {
+                return m('div', [
+                    m('div', { class: 'subtitle' }, "Top 100 Petition"),
+                    m('table', { class: 'table is-striped' }, [
+                        m('tr', [
+                            m('th', { width: "20px" }, "Nom"),
+                            m('th', { width: "50px" }, "Titre"),
+                            m('th', { width: "50px" }, "Description"),
+                            m('th', { width: "50px" }, "Nombre de signatures"),
+                            m('th', { width: "50px" }, "Date Partition"),
+                            m('th', { width: "50px" }, "tags"),
+                            m('th', { width: "50px" }, "Vote"),
+                        ]),
+                        Petition.list.map(function (item) {
+                            return m("tr", [
+                                m('td', m('label', item.properties.auteur)),
+                                m('td', m('label', item.properties.titre)),
+                                m('td', m('label', item.properties.description)),
+                                m('td', m('label', item.properties.nbSignatures)),
+                                m('td', m('label', item.properties.dateCreation)),
+                                m('td', m('label', item.properties.tags)),
+                                m('td', m('button', {
+                                    onclick: function () {
+                                        m.request({
+                                            method: "POST",
+                                            url: "_ah/api/myApi/v1/addSignature/",
+                                            body: {
+                                                email: authenticatedUser.email,
+                                                pid: item.key.id
+                                            },
+											headers: {
+												Authorization: "Bearer " + authenticatedUser.id
+											}
+                                        });
+                                        Petition.loadList()
+                                    }
+                                }, "Voter"))
+                            ])
+                        })
+                    ])
+                ])
+            }
+        }
+
+		var Home = {
+			view: function() {
+				return m('div', {class:'container'}, [
+					m("h1", {class: 'title'}, 'Les pétitions'),
+					m('div', { class: 'tile is-ancestor' }, [
+                        m("div", { class: 'tile' }, m('div', { class: 'tile is-child box' }, m(PetitionGameView))),
+                        m("div", { class: 'tile' }, m('div', { class: 'tile is-child box' }, m(PetitionView))),
+                    ]),
+				])
+			}
+		}
+
+		var Login = {
+			view: function () {
+				return m('div', { class: 'container' }, [
+					m("h1", { class: 'title' }, 'Tiny PET'),
+					m("div", {
+						id: "g_id_onload",
+						"data-client_id": "1090580414141-a27topbs048b1m3sok3675h7cnn3o3i4.apps.googleusercontent.com",
+						"data-callback": "handleCredentialResponse"
+					}),
+					m("div", { style: "display:flex;justify-content: center;align-items: center;height: 100vh;" }, [
+						m("div", {
+							style: "display:flex;justify-content: center;align-items: center;",
+							class: "g_id_signin",
+							"data-type": "standard"
+						}),
+					]),
+				])
+			}
+		}
+
+		m.route(document.body, "/login", {
+			"/login": Login,
+			"/home": { 
+				onmatch: function (){ 
+					if(!authenticatedUser.isLogged){
+						m.route.set("/login");
+					} else {
+						return Home;
+					}
+				}
+			},
+		});
+	
+
+	</script>
+
+</body>
+</html>
